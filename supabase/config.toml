@@ -1,0 +1,4 @@
+project_id = "lhydldgqfbtremckzure"
+
+[functions.ai-mastering]
+verify_jwt = false
