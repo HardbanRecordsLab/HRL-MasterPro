@@ -9,7 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 const QUICK_TAG_FILTERS = ['ALL', 'POP', 'EDM', 'HIP-HOP', 'ROCK', 'JAZZ', 'AMBIENT', 'STREAMING', 'PODCAST'];
 
 async function fetchAIAnalysis(metrics: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://api.hardbanrecordslab.online';
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
   
   // Get Supabase token for auth
   const { data: { session } } = await supabase.auth.getSession();
