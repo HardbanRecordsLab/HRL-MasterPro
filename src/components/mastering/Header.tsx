@@ -41,32 +41,13 @@ const Header = () => {
   return (
     <header className="flex items-center gap-3 px-4 py-2 border-b border-border bg-card/80 backdrop-blur-md flex-shrink-0 z-20">
       {/* BRANDING: HRL MasterAI Pro */}
-      <div className="flex items-center gap-3 flex-shrink-0 group">
+      <div className="flex items-center gap-3 group cursor-pointer">
         <div className="relative">
-          <img 
-            src="/hrl-logo.png" 
-            alt="HRL" 
-            className="w-8 h-8 object-contain filter drop-shadow-[0_0_8px_rgba(36,160,232,0.5)] group-hover:scale-110 transition-transform cursor-pointer" 
-            onError={(e) => {
-                // Fallback if image not found
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-                const parent = target.parentElement;
-                if (parent) {
-                    const fallback = document.createElement('div');
-                    fallback.className = 'w-8 h-8 rounded-lg bg-primary flex items-center justify-center font-black text-black';
-                    fallback.innerText = 'H';
-                    parent.appendChild(fallback);
-                }
-            }}
-          />
-          <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full animate-pulse shadow-[0_0_5px_var(--primary)]" />
+          <img src="/hrl-logo.png" alt="Logo" className="w-10 h-10 object-contain" />
         </div>
-        <div>
-          <div className="text-sm font-black tracking-tighter text-foreground group-hover:text-primary transition-colors flex items-center gap-1">
-            HRL <span className="text-primary">MasterAI</span> <span className="text-[10px] bg-primary/10 text-primary px-1 rounded ml-1">PRO</span>
-          </div>
-          <div className="text-[8px] text-muted-foreground tracking-[0.3em] uppercase font-bold opacity-60">High-Resolution Labs</div>
+        <div className="flex flex-col">
+          <span className="text-lg font-black tracking-tighter text-white leading-none group-hover:text-primary transition-colors italic">MASTER PRO</span>
+          <span className="text-[10px] font-medium text-white/40 leading-none uppercase tracking-[0.2em]">HardbanRecords Lab</span>
         </div>
       </div>
 
