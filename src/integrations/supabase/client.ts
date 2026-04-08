@@ -1,97 +1,65 @@
-import axios from 'axios';
+// HRL Bridge — zastepuje Supabase SDK wywolaniami do backendu VPS
+// Module: masterpro
+// Nie zawiera zadnych kluczy API ani sekretow
 
-// Pobieranie adresu API z Biblii 2026 / .env
-const HRL_API_URL = import.meta.env.VITE_HRL_API_URL || 'https://api-sync.hardbanrecordslab.online';
+const MODULE_URL = (import.meta.env.VITE_ACCESS_MANAGER_URL as string)
+  .replace('hrl-access', 'masterpro');
 
-/**
- * HRL BRIDGE CLIENT
- * Udaje strukturę Supabase SDK, ale przesyła dane do zunifikowanego backendu na VPS.
- */
 class HRLBridge {
-  private tableName: string = '';
-
   from(table: string) {
-    this.tableName = table;
-    return this;
-  }
-
-  async select(columns: string = '*') {
-    try {
-      const response = await axios.get(`${HRL_API_URL}/api/${this.tableName}`, {
-        params: { select: columns },
-        headers: this.getHeaders()
-      });
-      return { data: response.data, error: null };
-    } catch (err: any) {
-      return { data: null, error: err.response?.data || err.message };
-    }
-  }
-
-  async insert(values: any) {
-    try {
-      const response = await axios.post(`${HRL_API_URL}/api/${this.tableName}`, values, {
-        headers: this.getHeaders()
-      });
-      return { data: response.data, error: null };
-    } catch (err: any) {
-      return { data: null, error: err.response?.data || err.message };
-    }
-  }
-
-  async update(values: any) {
-    return { 
-      eq: async (column: string, value: any) => {
-        try {
-          const response = await axios.patch(`${HRL_API_URL}/api/${this.tableName}`, values, {
-            params: { [column]: value },
-            headers: this.getHeaders()
-          });
-          return { data: response.data, error: null };
-        } catch (err: any) {
-          return { data: null, error: err.response?.data || err.message };
-        }
-      }
-    };
-  }
-
-  async delete() {
-     return { 
-      eq: async (column: string, value: any) => {
-        try {
-          await axios.delete(`${HRL_API_URL}/api/${this.tableName}`, {
-            params: { [column]: value },
-            headers: this.getHeaders()
-          });
-          return { data: true, error: null };
-        } catch (err: any) {
-          return { data: null, error: err.response?.data || err.message };
-        }
-      }
-    };
-  }
-
-  // Symulacja API Auth Supabase
-  auth = {
-    getUser: async () => {
-       const token = localStorage.getItem('hrl_token');
-       if (!token) return { data: { user: null }, error: 'No session' };
-       // Tutaj docelowo weryfikacja w Twoim SSO Hub na porcie 9107
-       return { data: { user: { id: 'vps-user-id' } }, error: null };
-    },
-    signInWithPassword: async (creds: any) => {
-       const response = await axios.post(`${HRL_API_URL}/api/auth/login`, creds);
-       localStorage.setItem('hrl_token', response.data.token);
-       return { data: response.data, error: null };
-    }
-  }
-
-  private getHeaders() {
-    const token = localStorage.getItem('hrl_token');
     return {
-      'Authorization': `Bearer ${token}`,
-      'X-HRL-Source': 'VPS-Direct'
+      select: async (columns = '*') => {
+        try {
+          const res = await fetch(`${MODULE_URL}/api/${table}?select=${columns}`, { credentials: 'include' });
+          return { data: await res.json(), error: null };
+        } catch (err: any) { return { data: null, error: err.message }; }
+      },
+      insert: async (values: any) => {
+        try {
+          const res = await fetch(`${MODULE_URL}/api/${table}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(values) });
+          return { data: await res.json(), error: null };
+        } catch (err: any) { return { data: null, error: err.message }; }
+      },
+      update: (values: any) => ({ eq: async (col: string, val: any) => {
+        try {
+          const res = await fetch(`${MODULE_URL}/api/${table}?${col}=${encodeURIComponent(val)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(values) });
+          return { data: await res.json(), error: null };
+        } catch (err: any) { return { data: null, error: err.message }; }
+      }}),
+      delete: () => ({ eq: async (col: string, val: any) => {
+        try {
+          await fetch(`${MODULE_URL}/api/${table}?${col}=${encodeURIComponent(val)}`, { method: 'DELETE', credentials: 'include' });
+          return { data: true, error: null };
+        } catch (err: any) { return { data: null, error: err.message }; }
+      }}),
     };
+  }
+  auth = {
+    getSession: async () => {
+      try {
+        const res = await fetch(`${MODULE_URL}/api/auth/me`, { credentials: 'include' });
+        if (!res.ok) return { data: { session: null }, error: 'Unauthorized' };
+        return { data: { session: { user: await res.json() } }, error: null };
+      } catch (err: any) { return { data: { session: null }, error: err.message }; }
+    },
+    getUser: async () => {
+      try {
+        const res = await fetch(`${MODULE_URL}/api/auth/me`, { credentials: 'include' });
+        if (!res.ok) return { data: { user: null }, error: 'Unauthorized' };
+        return { data: { user: await res.json() }, error: null };
+      } catch (err: any) { return { data: { user: null }, error: err.message }; }
+    },
+    signOut: async () => {
+      try { await fetch(`${MODULE_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' }); } catch {}
+      return { error: null };
+    },
+  };
+  async rpc(fn: string, params?: Record<string, any>) {
+    try {
+      const res = await fetch(`${MODULE_URL}/api/rpc/${fn}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(params ?? {}) });
+      return { data: await res.json(), error: null };
+    } catch (err: any) { return { data: null, error: err.message }; }
   }
 }
 
-export const supabase = new HRLBridge() as any;
+export const supabase = new HRLBridge();

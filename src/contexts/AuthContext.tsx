@@ -1,110 +1,93 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+// src/contexts/AuthContext.tsx
+// Feature: hrl-ecosystem-deployment
+// IDENTYCZNY we wszystkich 9 frontendach — nie modyfikować per-app
+// Requirements: 3.3, 3.4, 3.5, 3.6, 3.8, 3.9, 3.10, 3.11
 
-// URL do serwisu HRL Access Manager
-const ACCESS_MANAGER_URL = import.meta.env.VITE_ACCESS_MANAGER_URL || 'http://localhost:9107';
-const WP_LOGIN_URL = import.meta.env.VITE_WP_LOGIN_URL || 'https://hardbanrecordslab.online/wp-login.php';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+
+const ACCESS_MANAGER_URL = import.meta.env.VITE_ACCESS_MANAGER_URL as string;
+const WP_LOGIN_URL = import.meta.env.VITE_WP_LOGIN_URL as string;
 
 interface User {
-  userId: number | string;
+  userId: string;
   email: string;
-  plan: string;
+  plan: 'free' | 'starter' | 'pro' | 'label';
   credits: number;
-  is_premium: boolean;
+  expiresAt: string;
 }
 
-interface AuthContextType {
+interface AuthContextValue {
   user: User | null;
-  isLoading: boolean;
-  error: string | null;
-  login: () => void;
-  logout: () => void;
-  refreshCredits: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-// Funkcja pomocnicza do czytania ciasteczek (jeśli token jest np. pod nazwą jwt_token)
-const getCookie = (name: string) => {
-  const value = `; ${document.cookie}`;
-  const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) return parts.pop()?.split(';').shift();
-  return null;
-};
-
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const verifyToken = async () => {
+  const verifyToken = async (): Promise<void> => {
     try {
-      // Pobieramy token z LocalStorage (zapasowo) lub Ciasteczka
-      const token = localStorage.getItem('jwt_token') || getCookie('jwt_token');
-      
-      if (!token) {
-        throw new Error('Brak tokenu autoryzacyjnego');
-      }
-
-      const response = await fetch(`${ACCESS_MANAGER_URL}/api/auth/verify`, {
+      const res = await fetch(`${ACCESS_MANAGER_URL}/api/auth/verify`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
+        credentials: 'include',
       });
-
-      if (!response.ok) {
-        throw new Error('Token nieważny lub wygasł');
+      if (res.status === 401) {
+        window.location.href = WP_LOGIN_URL;
+        return;
       }
+      const data: User = await res.json();
+      setUser(data);
+    } catch {
+      // Network error — do not redirect, keep existing state
+    }
+  };
 
-      const userData = await response.json();
-      setUser(userData);
-      setError(null);
-    } catch (err: any) {
-      console.error("SSO Auth Error:", err.message);
-      setError(err.message);
-      setUser(null);
+  const refreshSession = async (): Promise<void> => {
+    try {
+      const res = await fetch(`${ACCESS_MANAGER_URL}/api/auth/refresh`, {
+        credentials: 'include',
+      });
+      if (res.status === 401) {
+        window.location.href = WP_LOGIN_URL;
+        return;
+      }
+      const data: User = await res.json();
+      setUser(data);
+    } catch {
+      // Network error — do not redirect, keep existing state
+    }
+  };
+
+  const logout = async (): Promise<void> => {
+    try {
+      await fetch(`${ACCESS_MANAGER_URL}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
     } finally {
-      setIsLoading(false);
+      setUser(null);
     }
   };
 
   useEffect(() => {
-    // 1. Weryfikacja przy starcie
     verifyToken();
-
-    // 2. Poll co 60 sekund (odświeżanie sesji i pobieranie najnowszego stanu kredytów)
-    const intervalId = setInterval(verifyToken, 60000);
-
-    return () => clearInterval(intervalId);
+    const interval = setInterval(refreshSession, 60_000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const login = () => {
-    window.location.href = WP_LOGIN_URL;
-  };
-
-  const logout = () => {
-    localStorage.removeItem('jwt_token');
-    document.cookie = 'jwt_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-    setUser(null);
-    window.location.href = WP_LOGIN_URL;
-  };
-
-  const refreshCredits = async () => {
-    await verifyToken();
-  };
-
   return (
-    <AuthContext.Provider value={{ user, isLoading, error, login, logout, refreshCredits }}>
+    <AuthContext.Provider value={{ user, logout }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+export const useAuth = (): AuthContextValue => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error('useAuth must be used within AuthProvider');
   }
-  return context;
+  return ctx;
 };
