@@ -1,7 +1,7 @@
 // src/contexts/AuthContext.tsx
 // Feature: hrl-ecosystem-deployment
 // IDENTYCZNY we wszystkich 9 frontendach — nie modyfikować per-app
-// Requirements: 3.3, 3.4, 3.5, 3.6, 3.8, 3.9, 3.10, 3.11
+// v2: Cookie-based SSO — login on WP, cookie shared across all subdomains
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
@@ -13,18 +13,41 @@ interface User {
   email: string;
   plan: 'free' | 'starter' | 'pro' | 'label';
   credits: number;
-  expiresAt: string;
+  expiresAt?: string;
 }
 
 interface AuthContextValue {
   user: User | null;
+  isLoading: boolean;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// ── Loading spinner ───────────────────────────────────────────────────────────
+const LoadingScreen = () => (
+  <div style={{
+    minHeight: '100vh',
+    background: '#0a0a0f',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  }}>
+    <div style={{
+      width: '40px', height: '40px',
+      border: '3px solid rgba(168,85,247,0.3)',
+      borderTop: '3px solid #a855f7',
+      borderRadius: '50%',
+      animation: 'hrl-spin 0.8s linear infinite',
+    }} />
+    <style>{`@keyframes hrl-spin { to { transform: rotate(360deg); } }`}</style>
+  </div>
+);
+
+// ── AuthProvider ──────────────────────────────────────────────────────────────
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const verifyToken = async (): Promise<void> => {
     try {
@@ -33,13 +56,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         credentials: 'include',
       });
       if (res.status === 401) {
-        window.location.href = WP_LOGIN_URL;
+        const returnUrl = encodeURIComponent(window.location.href);
+        window.location.href = `${WP_LOGIN_URL}?redirect_to=${returnUrl}`;
         return;
       }
-      const data: User = await res.json();
-      setUser(data);
+      if (res.ok) {
+        setUser(await res.json());
+      }
     } catch {
-      // Network error — do not redirect, keep existing state
+      // Network error — keep loading state, retry
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -49,14 +76,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         credentials: 'include',
       });
       if (res.status === 401) {
-        window.location.href = WP_LOGIN_URL;
+        setUser(null);
+        const returnUrl = encodeURIComponent(window.location.href);
+        window.location.href = `${WP_LOGIN_URL}?redirect_to=${returnUrl}`;
         return;
       }
-      const data: User = await res.json();
-      setUser(data);
-    } catch {
-      // Network error — do not redirect, keep existing state
-    }
+      if (res.ok) setUser(await res.json());
+    } catch {}
   };
 
   const logout = async (): Promise<void> => {
@@ -67,6 +93,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     } finally {
       setUser(null);
+      window.location.href = WP_LOGIN_URL;
     }
   };
 
@@ -77,8 +104,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (isLoading) return <LoadingScreen />;
+
   return (
-    <AuthContext.Provider value={{ user, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -86,8 +115,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = (): AuthContextValue => {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
 };
