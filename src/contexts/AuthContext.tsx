@@ -51,11 +51,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const verifyToken = async (): Promise<void> => {
     try {
+      // 1. Sprawdź czy token jest w URL (fallback dla Vercel/SSO Redirect)
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get('token');
+
+      if (urlToken) {
+        localStorage.setItem('hrl_jwt_token', urlToken);
+        document.cookie = `jwt_token=${urlToken}; path=/; max-age=604800; SameSite=Lax; Secure; domain=.hardbanrecordslab.online`;
+        
+        // Wyczyść URL
+        const newUrl = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, '', newUrl);
+      }
+
+      const storedToken = localStorage.getItem('hrl_jwt_token');
+
       const res = await fetch(`${ACCESS_MANAGER_URL}/api/auth/verify`, {
         method: 'POST',
         credentials: 'include',
+        headers: storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {},
       });
+
       if (res.status === 401) {
+        localStorage.removeItem('hrl_jwt_token');
         const returnUrl = encodeURIComponent(window.location.href);
         window.location.href = `${WP_LOGIN_URL}?redirect_to=${returnUrl}`;
         return;
@@ -72,11 +90,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshSession = async (): Promise<void> => {
     try {
+      const storedToken = localStorage.getItem('hrl_jwt_token');
       const res = await fetch(`${ACCESS_MANAGER_URL}/api/auth/refresh`, {
         credentials: 'include',
+        headers: storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {},
       });
       if (res.status === 401) {
         setUser(null);
+        localStorage.removeItem('hrl_jwt_token');
         const returnUrl = encodeURIComponent(window.location.href);
         window.location.href = `${WP_LOGIN_URL}?redirect_to=${returnUrl}`;
         return;
@@ -87,6 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async (): Promise<void> => {
     try {
+      localStorage.removeItem('hrl_jwt_token');
       await fetch(`${ACCESS_MANAGER_URL}/api/auth/logout`, {
         method: 'POST',
         credentials: 'include',
