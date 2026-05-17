@@ -19,7 +19,7 @@ export const accessApi = axios.create({
 });
 
 const authInterceptor = (config: any) => {
-  const token = localStorage.getItem('hrl_sso_token');
+  const token = localStorage.getItem('hrl_local_app_auth');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

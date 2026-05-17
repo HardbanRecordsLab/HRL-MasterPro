@@ -20,16 +20,16 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      token: localStorage.getItem('hrl_sso_token'),
+      token: localStorage.getItem('hrl_local_app_auth'),
       user: null,
       setAuth: (token, user) => {
-        localStorage.setItem('hrl_sso_token', token);
+        localStorage.setItem('hrl_local_app_auth', token);
         set({ token, user });
       },
       logout: () => {
-        localStorage.removeItem('hrl_sso_token');
+        localStorage.removeItem('hrl_local_app_auth');
         set({ token: null, user: null });
-        window.location.href = 'https://hardbanrecordslab.online/moje-konto/';
+        window.location.href = '/';
       },
       updateCredits: (credits) => 
         set((state) => ({ 

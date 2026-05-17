@@ -1,135 +1,112 @@
-// src/contexts/AuthContext.tsx
-// Feature: hrl-ecosystem-deployment
-// IDENTYCZNY we wszystkich 9 frontendach — nie modyfikować per-app
-// v2: Cookie-based SSO — login on WP, cookie shared across all subdomains
+// Local app auth context - WordPress/Access Manager login bridge removed.
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
-const ACCESS_MANAGER_URL = import.meta.env.VITE_ACCESS_MANAGER_URL as string;
-const WP_LOGIN_URL = import.meta.env.VITE_WP_LOGIN_URL as string;
+export type UserRole = 'admin' | 'student' | 'manager' | 'viewer' | string;
 
 interface User {
+  id: string;
   userId: string;
   email: string;
+  name: string;
+  full_name: string;
+  avatar?: string;
+  role: UserRole;
   plan: 'free' | 'starter' | 'pro' | 'label';
+  tier: string;
   credits: number;
+  is_premium: boolean;
+  pmp_level?: string;
   expiresAt?: string;
+}
+
+interface Session {
+  user: User;
+  token: string;
 }
 
 interface AuthContextValue {
   user: User | null;
+  session: Session | null;
+  token: string | null;
+  isAuthenticated: boolean;
   isLoading: boolean;
+  loading: boolean;
+  error: string | null;
+  login: () => void;
   logout: () => Promise<void>;
+  refreshCredits: () => Promise<void>;
 }
+
+const LOCAL_TOKEN = 'hrl-local-app-token';
+const LOCAL_USER: User = {
+  id: 'local-admin',
+  userId: 'local-admin',
+  email: 'local@hardbanrecordslab.online',
+  name: 'Local Admin',
+  full_name: 'Local Admin',
+  role: 'admin',
+  plan: 'label',
+  tier: 'label',
+  credits: 999999,
+  is_premium: true,
+  pmp_level: 'Local App Access',
+};
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-// ── Loading spinner ───────────────────────────────────────────────────────────
-const LoadingScreen = () => (
-  <div style={{
-    minHeight: '100vh',
-    background: '#0a0a0f',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  }}>
-    <div style={{
-      width: '40px', height: '40px',
-      border: '3px solid rgba(168,85,247,0.3)',
-      borderTop: '3px solid #a855f7',
-      borderRadius: '50%',
-      animation: 'hrl-spin 0.8s linear infinite',
-    }} />
-    <style>{`@keyframes hrl-spin { to { transform: rotate(360deg); } }`}</style>
-  </div>
-);
+function clearLegacySsoState() {
+  localStorage.removeItem('hrl_jwt_token');
+  document.cookie = 'jwt_token=; Max-Age=0; path=/;';
+  document.cookie = 'jwt_token=; Max-Age=0; path=/; domain=.hardbanrecordslab.online;';
+}
 
-// ── AuthProvider ──────────────────────────────────────────────────────────────
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(LOCAL_USER);
+  const [token, setToken] = useState<string | null>(LOCAL_TOKEN);
   const [isLoading, setIsLoading] = useState(true);
 
-  const verifyToken = async (): Promise<void> => {
-    try {
-      // 1. Sprawdź czy token jest w URL (fallback dla Vercel/SSO Redirect)
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlToken = urlParams.get('token');
-
-      if (urlToken) {
-        localStorage.setItem('hrl_jwt_token', urlToken);
-        document.cookie = `jwt_token=${urlToken}; path=/; max-age=604800; SameSite=Lax; Secure; domain=.hardbanrecordslab.online`;
-        
-        // Wyczyść URL
-        const newUrl = window.location.pathname + window.location.hash;
-        window.history.replaceState({}, '', newUrl);
-      }
-
-      const storedToken = localStorage.getItem('hrl_jwt_token');
-
-      const res = await fetch(`${ACCESS_MANAGER_URL}/api/auth/verify`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {},
-      });
-
-      if (res.status === 401) {
-        localStorage.removeItem('hrl_jwt_token');
-        const returnUrl = encodeURIComponent(window.location.href);
-        window.location.href = `${WP_LOGIN_URL}?redirect_to=${returnUrl}`;
-        return;
-      }
-      if (res.ok) {
-        setUser(await res.json());
-      }
-    } catch {
-      // Network error — keep loading state, retry
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const refreshSession = async (): Promise<void> => {
-    try {
-      const storedToken = localStorage.getItem('hrl_jwt_token');
-      const res = await fetch(`${ACCESS_MANAGER_URL}/api/auth/refresh`, {
-        credentials: 'include',
-        headers: storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {},
-      });
-      if (res.status === 401) {
-        setUser(null);
-        localStorage.removeItem('hrl_jwt_token');
-        const returnUrl = encodeURIComponent(window.location.href);
-        window.location.href = `${WP_LOGIN_URL}?redirect_to=${returnUrl}`;
-        return;
-      }
-      if (res.ok) setUser(await res.json());
-    } catch {}
-  };
-
-  const logout = async (): Promise<void> => {
-    try {
-      localStorage.removeItem('hrl_jwt_token');
-      await fetch(`${ACCESS_MANAGER_URL}/api/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-    } finally {
-      setUser(null);
-      window.location.href = WP_LOGIN_URL;
-    }
+  const enableLocalSession = () => {
+    clearLegacySsoState();
+    localStorage.setItem('hrl_local_app_auth', LOCAL_TOKEN);
+    setUser(LOCAL_USER);
+    setToken(LOCAL_TOKEN);
   };
 
   useEffect(() => {
-    verifyToken();
-    const interval = setInterval(refreshSession, 60_000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    enableLocalSession();
+    setIsLoading(false);
   }, []);
 
-  if (isLoading) return <LoadingScreen />;
+  const logout = async (): Promise<void> => {
+    clearLegacySsoState();
+    localStorage.removeItem('hrl_local_app_auth');
+    setUser(LOCAL_USER);
+    setToken(LOCAL_TOKEN);
+  };
+
+  const refreshCredits = async (): Promise<void> => {
+    enableLocalSession();
+  };
+
+  const session = user && token ? { user, token } : null;
+  const isAuthenticated = Boolean(session);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        token,
+        isAuthenticated,
+        isLoading,
+        loading: isLoading,
+        error: null,
+        login: enableLocalSession,
+        logout,
+        refreshCredits,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
